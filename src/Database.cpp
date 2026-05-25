@@ -141,6 +141,24 @@ std::optional<StoredRecord> Database::get_by_id(std::int64_t id) const {
     return row;
 }
 
+std::optional<StoredRecord> Database::get_by_record_id(std::uint64_t record_id) const {
+    constexpr const char* sql =
+        "SELECT id, record_id_guess, offset, parent_ref, name, namespace, flags, "
+        "allocated_size, real_size, is_directory "
+        "FROM records WHERE record_id_guess = ? "
+        "ORDER BY namespace = 2, LENGTH(name) DESC, id LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    check_sqlite(sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr), db_, "prepare get by record id");
+    sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(record_id));
+
+    std::optional<StoredRecord> row;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        row = row_to_record(stmt);
+    }
+    sqlite3_finalize(stmt);
+    return row;
+}
+
 std::vector<StoredRecord> Database::children_of(std::uint64_t parent_ref) const {
     constexpr const char* sql =
         "SELECT id, record_id_guess, offset, parent_ref, name, namespace, flags, "

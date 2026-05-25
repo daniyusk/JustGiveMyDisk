@@ -35,6 +35,7 @@ public:
     void insert_record(const MftRecord& record, const MftFileName& name);
     std::vector<StoredRecord> find_by_name(const std::string& name) const;
     std::optional<StoredRecord> get_by_id(std::int64_t id) const;
+    std::optional<StoredRecord> get_by_record_id(std::uint64_t record_id) const;
     std::vector<StoredRecord> children_of(std::uint64_t parent_ref) const;
 
 private:

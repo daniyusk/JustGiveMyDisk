@@ -22,13 +22,26 @@ struct MftRecord {
     std::vector<MftFileName> names;
 };
 
+struct DataRun {
+    std::uint64_t lcn = 0;
+    std::uint64_t cluster_count = 0;
+    bool sparse = false;
+};
+
+struct DataAttribute {
+    bool resident = false;
+    std::vector<std::uint8_t> resident_data;
+    std::vector<DataRun> runs;
+    std::uint64_t real_size = 0;
+};
+
 class MftRecordParser {
 public:
     static constexpr std::size_t RecordSize = 1024;
 
     std::optional<MftRecord> parse(const std::vector<std::uint8_t>& bytes,
                                    std::uint64_t offset) const;
-
-private:
+    std::optional<std::uint64_t> record_number(const std::vector<std::uint8_t>& bytes) const;
+    std::vector<DataAttribute> data_attributes(const std::vector<std::uint8_t>& bytes) const;
     static bool restore_usa(std::vector<std::uint8_t>& bytes);
 };

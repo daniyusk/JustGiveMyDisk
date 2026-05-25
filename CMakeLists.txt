@@ -16,6 +16,7 @@ find_package(SQLite3 REQUIRED)
 add_executable(JustGiveMyDisk
     src/main.cpp
     src/Scanner.cpp
+    src/Recover.cpp
     src/MftRecord.cpp
     src/Database.cpp
     src/Utf.cpp)

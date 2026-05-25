@@ -1,4 +1,5 @@
 #include "Database.hpp"
+#include "Recover.hpp"
 #include "Scanner.hpp"
 
 #include <CLI/CLI.hpp>
@@ -79,6 +80,20 @@ int main(int argc, char** argv) {
         ->required();
     tree_cmd->add_option("--depth", tree_depth, "Maximum recursion depth");
 
+    RecoverOptions recover_options;
+    auto* recover_cmd = app.add_subcommand("recover", "Recover indexed files below a record id");
+    recover_cmd->add_option("source", recover_options.source, "Source block device or image")
+        ->required()
+        ->check(CLI::ExistingPath);
+    recover_cmd->add_option("database", recover_options.database_path, "SQLite scan database")
+        ->required()
+        ->check(CLI::ExistingFile);
+    recover_cmd->add_option("--id", recover_options.root_record_id, "Root record_id_guess to recover below")
+        ->required();
+    recover_cmd->add_option("--dest", recover_options.destination, "Destination directory")
+        ->required();
+    recover_cmd->add_flag("--dry-run", recover_options.dry_run, "Print what would be recovered without writing files");
+
     CLI11_PARSE(app, argc, argv);
 
     try {
@@ -107,6 +122,12 @@ int main(int argc, char** argv) {
             }
             print_stored_record(*root);
             print_tree(db, root->record_id_guess, 1, tree_depth);
+            return 0;
+        }
+
+        if (*recover_cmd) {
+            Recover recover;
+            recover.run(recover_options);
             return 0;
         }
     } catch (const std::exception& e) {

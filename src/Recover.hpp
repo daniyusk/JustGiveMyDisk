@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 struct RecoverOptions {
@@ -14,9 +15,13 @@ struct RecoverOptions {
 struct RecoverStats {
     std::uint64_t recovered = 0;
     std::uint64_t skipped = 0;
+    std::uint64_t preview_items = 0;
 };
 
 class Recover {
 public:
+    using LogCallback = std::function<void(const std::string&)>;
+
     RecoverStats run(const RecoverOptions& options);
+    RecoverStats run(const RecoverOptions& options, const LogCallback& log);
 };

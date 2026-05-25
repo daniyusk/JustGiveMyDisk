@@ -1,6 +1,7 @@
 #include "Database.hpp"
 #include "Recover.hpp"
 #include "Scanner.hpp"
+#include "Tui.hpp"
 
 #include <CLI/CLI.hpp>
 #include <fmt/core.h>
@@ -94,6 +95,8 @@ int main(int argc, char** argv) {
         ->required();
     recover_cmd->add_flag("--dry-run", recover_options.dry_run, "Print what would be recovered without writing files");
 
+    auto* tui_cmd = app.add_subcommand("tui", "Open the interactive terminal recovery UI");
+
     CLI11_PARSE(app, argc, argv);
 
     try {
@@ -129,6 +132,10 @@ int main(int argc, char** argv) {
             Recover recover;
             recover.run(recover_options);
             return 0;
+        }
+
+        if (*tui_cmd) {
+            return run_tui();
         }
     } catch (const std::exception& e) {
         fmt::print(stderr, "error: {}\n", e.what());

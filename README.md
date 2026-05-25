@@ -32,6 +32,20 @@ Arch/EndeavourOS:
 sudo pacman -S cmake ninja gcc sqlite fmt cli11
 ```
 
+For the terminal UI, install FTXUI when your distro provides it:
+
+```sh
+sudo pacman -S ftxui
+```
+
+If `pacman` reports `target not found`, use an AUR package such as:
+
+```sh
+yay -S ftxui-git
+```
+
+The CMake build also falls back to downloading FTXUI with `FetchContent` when no system package is found.
+
 ## Build
 
 ```sh
@@ -40,6 +54,14 @@ cmake --build build
 ```
 
 ## Usage
+
+Open the TestDisk-style terminal UI:
+
+```sh
+./build/JustGiveMyDisk tui
+```
+
+The TUI detects Linux block devices and partitions, asks for a `scan.db` path, scans read-only using the same scanner as the CLI, then provides indexed search, parent-chain/tree previews, dry-run recovery, and confirmed recovery.
 
 Scan a damaged partition read-only and write the index to `scan.db`:
 

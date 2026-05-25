@@ -69,19 +69,33 @@ void print_record_match(const char* prefix, const MftRecord& record, const MftFi
 } // namespace
 
 ScanStats Scanner::run(const ScanOptions& options) {
+    return run(options, {});
+}
+
+ScanStats Scanner::run(const ScanOptions& options, const ProgressCallback& progress) {
     FileDescriptor source(options.source);
     Database database(options.database_path);
     database.initialize();
 
+    ScanStats stats;
     const auto total_size = source_size(source.get());
     if (total_size) {
-        fmt::print("Scanning {} bytes from {} in read-only mode\n", *total_size, options.source);
+        const auto message = fmt::format("Scanning {} bytes from {} in read-only mode", *total_size, options.source);
+        if (progress) {
+            progress(ScanProgress{stats, total_size, message});
+        } else {
+            fmt::print("{}\n", message);
+        }
     } else {
-        fmt::print("Scanning {} in read-only mode\n", options.source);
+        const auto message = fmt::format("Scanning {} in read-only mode", options.source);
+        if (progress) {
+            progress(ScanProgress{stats, total_size, message});
+        } else {
+            fmt::print("{}\n", message);
+        }
     }
 
     MftRecordParser parser;
-    ScanStats stats;
     std::vector<std::uint8_t> buffer(MftRecordParser::RecordSize);
 
     database.begin();
@@ -131,22 +145,37 @@ ScanStats Scanner::run(const ScanOptions& options) {
         if (offset >= next_progress) {
             if (total_size && *total_size > 0) {
                 const double pct = (static_cast<double>(offset) / static_cast<double>(*total_size)) * 100.0;
-                fmt::print("progress: {} bytes ({:.2f}%), valid_records={}, names={}\n",
-                           offset, pct, stats.valid_records, stats.inserted_names);
+                const auto message = fmt::format("progress: {} bytes ({:.2f}%), valid_records={}, names={}",
+                                                 offset, pct, stats.valid_records, stats.inserted_names);
+                if (progress) {
+                    progress(ScanProgress{stats, total_size, message});
+                } else {
+                    fmt::print("{}\n", message);
+                }
             } else {
-                fmt::print("progress: {} bytes, valid_records={}, names={}\n",
-                           offset, stats.valid_records, stats.inserted_names);
+                const auto message = fmt::format("progress: {} bytes, valid_records={}, names={}",
+                                                 offset, stats.valid_records, stats.inserted_names);
+                if (progress) {
+                    progress(ScanProgress{stats, total_size, message});
+                } else {
+                    fmt::print("{}\n", message);
+                }
             }
             next_progress = offset + (256ULL * 1024ULL * 1024ULL);
         }
     }
 
     database.commit();
-    fmt::print("done: scanned={} candidates={} valid_records={} names={} target_matches={}\n",
-               stats.bytes_scanned,
-               stats.candidate_file_signatures,
-               stats.valid_records,
-               stats.inserted_names,
-               stats.target_matches);
+    const auto message = fmt::format("done: scanned={} candidates={} valid_records={} names={} target_matches={}",
+                                     stats.bytes_scanned,
+                                     stats.candidate_file_signatures,
+                                     stats.valid_records,
+                                     stats.inserted_names,
+                                     stats.target_matches);
+    if (progress) {
+        progress(ScanProgress{stats, total_size, message});
+    } else {
+        fmt::print("{}\n", message);
+    }
     return stats;
 }

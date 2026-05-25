@@ -292,6 +292,18 @@ bool recover_file(int fd,
 } // namespace
 
 RecoverStats Recover::run(const RecoverOptions& options) {
+    return run(options, {});
+}
+
+RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log) {
+    const auto emit = [&](const std::string& message) {
+        if (log) {
+            log(message);
+        } else {
+            fmt::print("{}\n", message);
+        }
+    };
+
     Database db(options.database_path);
     SourceDevice source(options.source);
     const std::uint64_t cluster_size = read_cluster_size(source.get());
@@ -306,14 +318,15 @@ RecoverStats Recover::run(const RecoverOptions& options) {
     collect_tree(db, options.root_record_id, {}, items, visited_dirs);
 
     RecoverStats stats;
+    stats.preview_items = items.size();
     if (options.dry_run) {
-        fmt::print("dry-run: root record {} -> {}\n", options.root_record_id, options.destination);
+        emit(fmt::format("dry-run: root record {} -> {}", options.root_record_id, options.destination));
         for (const auto& item : items) {
-            fmt::print("{} {}\n",
-                       item.record.is_directory ? "dir " : "file",
-                       (std::filesystem::path(options.destination) / item.relative_path).string());
+            emit(fmt::format("{} {}",
+                             item.record.is_directory ? "dir " : "file",
+                             (std::filesystem::path(options.destination) / item.relative_path).string()));
         }
-        fmt::print("dry-run: {} item(s)\n", items.size());
+        emit(fmt::format("dry-run: {} item(s)", items.size()));
         return stats;
     }
 
@@ -326,7 +339,7 @@ RecoverStats Recover::run(const RecoverOptions& options) {
         }
     }
 
-    fmt::print("Locating {} file MFT record(s) by FILE header record number\n", wanted_files.size());
+    emit(fmt::format("Locating {} file MFT record(s) by FILE header record number", wanted_files.size()));
     const auto records = locate_records(source.get(), wanted_files);
 
     for (const auto& item : items) {
@@ -341,17 +354,17 @@ RecoverStats Recover::run(const RecoverOptions& options) {
             if (found == records.end() ||
                 !recover_file(source.get(), item.record, found->second, cluster_size, target)) {
                 ++stats.skipped;
-                fmt::print("skipped {}\n", target.string());
+                emit(fmt::format("skipped {}", target.string()));
                 continue;
             }
             ++stats.recovered;
-            fmt::print("recovered {}\n", target.string());
+            emit(fmt::format("recovered {}", target.string()));
         } catch (const std::exception& e) {
             ++stats.skipped;
-            fmt::print("skipped {} ({})\n", target.string(), e.what());
+            emit(fmt::format("skipped {} ({})", target.string(), e.what()));
         }
     }
 
-    fmt::print("done: recovered={} skipped={}\n", stats.recovered, stats.skipped);
+    emit(fmt::format("done: recovered={} skipped={}", stats.recovered, stats.skipped));
     return stats;
 }

@@ -4,6 +4,7 @@
 #include "MftRecord.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -21,7 +22,16 @@ struct ScanStats {
     std::uint64_t target_matches = 0;
 };
 
+struct ScanProgress {
+    ScanStats stats;
+    std::optional<std::uint64_t> total_size;
+    std::string message;
+};
+
 class Scanner {
 public:
+    using ProgressCallback = std::function<void(const ScanProgress&)>;
+
     ScanStats run(const ScanOptions& options);
+    ScanStats run(const ScanOptions& options, const ProgressCallback& progress);
 };

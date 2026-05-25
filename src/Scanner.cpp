@@ -1,0 +1,152 @@
+#include "Scanner.hpp"
+
+#include <fmt/core.h>
+
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <stdexcept>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <vector>
+
+namespace {
+
+class FileDescriptor {
+public:
+    explicit FileDescriptor(const std::string& path) {
+        fd_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd_ < 0) {
+            throw std::runtime_error(fmt::format("failed to open source read-only {}: {}", path, std::strerror(errno)));
+        }
+    }
+
+    ~FileDescriptor() {
+        if (fd_ >= 0) {
+            ::close(fd_);
+        }
+    }
+
+    FileDescriptor(const FileDescriptor&) = delete;
+    FileDescriptor& operator=(const FileDescriptor&) = delete;
+
+    int get() const {
+        return fd_;
+    }
+
+private:
+    int fd_ = -1;
+};
+
+std::optional<std::uint64_t> source_size(int fd) {
+    struct stat st {};
+    if (::fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
+        return static_cast<std::uint64_t>(st.st_size);
+    }
+    const off_t end = ::lseek(fd, 0, SEEK_END);
+    if (end >= 0) {
+        ::lseek(fd, 0, SEEK_SET);
+        return static_cast<std::uint64_t>(end);
+    }
+    return std::nullopt;
+}
+
+void print_record_match(const char* prefix, const MftRecord& record, const MftFileName& name) {
+    fmt::print("{} id_guess={} db_parent={} offset={} name=\"{}\" ns={} dir={} alloc={} real={} flags=0x{:x}\n",
+               prefix,
+               record.record_id_guess,
+               name.parent_ref,
+               record.offset,
+               name.name,
+               name.name_namespace,
+               name.is_directory ? 1 : 0,
+               name.allocated_size,
+               name.real_size,
+               name.flags);
+}
+
+} // namespace
+
+ScanStats Scanner::run(const ScanOptions& options) {
+    FileDescriptor source(options.source);
+    Database database(options.database_path);
+    database.initialize();
+
+    const auto total_size = source_size(source.get());
+    if (total_size) {
+        fmt::print("Scanning {} bytes from {} in read-only mode\n", *total_size, options.source);
+    } else {
+        fmt::print("Scanning {} in read-only mode\n", options.source);
+    }
+
+    MftRecordParser parser;
+    ScanStats stats;
+    std::vector<std::uint8_t> buffer(MftRecordParser::RecordSize);
+
+    database.begin();
+    std::uint64_t offset = 0;
+    std::uint64_t next_progress = 0;
+
+    while (true) {
+        std::size_t filled = 0;
+        while (filled < buffer.size()) {
+            const ssize_t n = ::read(source.get(), buffer.data() + filled, buffer.size() - filled);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                database.commit();
+                throw std::runtime_error(fmt::format("read failed at offset {}: {}", offset + filled, std::strerror(errno)));
+            }
+            if (n == 0) {
+                break;
+            }
+            filled += static_cast<std::size_t>(n);
+        }
+
+        if (filled < buffer.size()) {
+            break;
+        }
+
+        if (std::memcmp(buffer.data(), "FILE", 4) == 0) {
+            ++stats.candidate_file_signatures;
+            if (auto record = parser.parse(buffer, offset)) {
+                ++stats.valid_records;
+                for (const auto& name : record->names) {
+                    database.insert_record(*record, name);
+                    ++stats.inserted_names;
+
+                    if (options.target && name.name == *options.target) {
+                        ++stats.target_matches;
+                        print_record_match("match", *record, name);
+                    }
+                }
+            }
+        }
+
+        offset += buffer.size();
+        stats.bytes_scanned = offset;
+
+        if (offset >= next_progress) {
+            if (total_size && *total_size > 0) {
+                const double pct = (static_cast<double>(offset) / static_cast<double>(*total_size)) * 100.0;
+                fmt::print("progress: {} bytes ({:.2f}%), valid_records={}, names={}\n",
+                           offset, pct, stats.valid_records, stats.inserted_names);
+            } else {
+                fmt::print("progress: {} bytes, valid_records={}, names={}\n",
+                           offset, stats.valid_records, stats.inserted_names);
+            }
+            next_progress = offset + (256ULL * 1024ULL * 1024ULL);
+        }
+    }
+
+    database.commit();
+    fmt::print("done: scanned={} candidates={} valid_records={} names={} target_matches={}\n",
+               stats.bytes_scanned,
+               stats.candidate_file_signatures,
+               stats.valid_records,
+               stats.inserted_names,
+               stats.target_matches);
+    return stats;
+}

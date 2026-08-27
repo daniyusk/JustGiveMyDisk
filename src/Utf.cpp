@@ -36,11 +36,15 @@ std::string utf16le_to_utf8(const std::uint8_t* data, std::size_t byte_count) {
     for (std::size_t i = 0; i + 1 < byte_count; i += 2) {
         std::uint32_t cp = read_u16le(data + i);
 
-        if (cp >= 0xD800 && cp <= 0xDBFF && i + 3 < byte_count) {
-            const std::uint32_t low = read_u16le(data + i + 2);
-            if (low >= 0xDC00 && low <= 0xDFFF) {
-                cp = 0x10000 + (((cp - 0xD800) << 10U) | (low - 0xDC00));
-                i += 2;
+        if (cp >= 0xD800 && cp <= 0xDBFF) {
+            if (i + 3 < byte_count) {
+                const std::uint32_t low = read_u16le(data + i + 2);
+                if (low >= 0xDC00 && low <= 0xDFFF) {
+                    cp = 0x10000 + (((cp - 0xD800) << 10U) | (low - 0xDC00));
+                    i += 2;
+                } else {
+                    cp = 0xFFFD;
+                }
             } else {
                 cp = 0xFFFD;
             }

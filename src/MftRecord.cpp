@@ -20,11 +20,11 @@ std::optional<T> read_le(const std::vector<std::uint8_t>& bytes, std::size_t off
         return std::nullopt;
     }
 
-    T value = 0;
+    std::uint64_t value = 0;
     for (std::size_t i = 0; i < sizeof(T); ++i) {
-        value |= static_cast<T>(bytes[offset + i]) << (8U * i);
+        value |= static_cast<std::uint64_t>(bytes[offset + i]) << (8U * i);
     }
-    return value;
+    return static_cast<T>(value);
 }
 
 std::uint64_t base_file_ref(std::uint64_t file_ref) {

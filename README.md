@@ -28,25 +28,9 @@ JustGiveMyDisk is an experimental, terminal-only C++20 recovery helper for corru
 
 ## Dependencies
 
-Arch/EndeavourOS:
-
-```sh
-sudo pacman -S cmake ninja gcc sqlite fmt cli11
-```
-
-For the terminal UI, install FTXUI when your distro provides it:
-
-```sh
-sudo pacman -S ftxui
-```
-
-If `pacman` reports `target not found`, use an AUR package such as:
-
-```sh
-yay -S ftxui-git
-```
-
-The CMake build also falls back to downloading FTXUI with `FetchContent` when no system package is found.
+A C++20 compiler, CMake 3.20 or newer, Git, and a standard build tool are required.
+CLI11, fmt, FTXUI, and the SQLite amalgamation are fetched by CMake from immutable,
+checksum-verified revisions declared in `cmake/Dependencies.cmake`.
 
 ## Build
 
@@ -54,6 +38,18 @@ The CMake build also falls back to downloading FTXUI with `FetchContent` when no
 cmake -S . -B build -G Ninja
 cmake --build build
 ```
+
+Enable warnings-as-errors and run the smoke tests with:
+
+```sh
+cmake -S . -B build -G Ninja -DBUILD_TESTING=ON -DJGMD_WARNINGS_AS_ERRORS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The scanner, recovery, parser, database, and UTF conversion code live in the
+`JustGiveMyDisk::core` library. Tests link that library directly and do not start
+or link through the interactive TUI entry point.
 
 ## Usage
 

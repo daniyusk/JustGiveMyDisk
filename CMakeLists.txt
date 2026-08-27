@@ -86,21 +86,21 @@ if (BUILD_TESTING)
 
     add_test(NAME MftRecordParserTests COMMAND MftRecordParserTests)
 
-    add_executable(path_safety_tests
-        tests/PathSafetyTests.cpp
-        src/PathSafety.cpp)
-    target_include_directories(path_safety_tests PRIVATE src)
-    target_link_libraries(path_safety_tests PRIVATE fmt::fmt)
-    add_test(NAME path_safety_unit COMMAND path_safety_tests)
-
-    add_executable(recovery_output_tests
-        tests/RecoveryOutputTests.cpp
-        src/RecoveryOutput.cpp)
-    target_include_directories(recovery_output_tests PRIVATE src)
-    target_link_libraries(recovery_output_tests PRIVATE fmt::fmt)
-    add_test(NAME recovery_output_unit COMMAND recovery_output_tests)
-
     if (JUSTGIVEMYDISK_BUILD_APP)
+        add_executable(path_safety_tests
+            tests/PathSafetyTests.cpp
+            src/PathSafety.cpp)
+        target_include_directories(path_safety_tests PRIVATE src)
+        target_link_libraries(path_safety_tests PRIVATE fmt::fmt)
+        add_test(NAME path_safety_unit COMMAND path_safety_tests)
+
+        add_executable(recovery_output_tests
+            tests/RecoveryOutputTests.cpp
+            src/RecoveryOutput.cpp)
+        target_include_directories(recovery_output_tests PRIVATE src)
+        target_link_libraries(recovery_output_tests PRIVATE fmt::fmt)
+        add_test(NAME recovery_output_unit COMMAND recovery_output_tests)
+
         add_test(
             NAME path_safety_cli_integration
             COMMAND ${CMAKE_COMMAND}

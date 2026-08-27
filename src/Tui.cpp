@@ -1,3 +1,13 @@
+#if !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+#if !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE
+#endif
+#if !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "Tui.hpp"
 
 #include "Database.hpp"
@@ -19,10 +29,18 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <stdio.h>
 #include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
+
+#if defined(__CYGWIN__) || defined(__MSYS__)
+extern "C" {
+FILE* popen(const char*, const char*);
+int pclose(FILE*);
+}
+#endif
 
 namespace {
 
@@ -53,14 +71,22 @@ enum class Page {
 std::string run_command(const std::string& command) {
     std::array<char, 4096> buffer {};
     std::string output;
+#if defined(_WIN32)
+    FILE* pipe = ::_popen(command.c_str(), "r");
+#else
     FILE* pipe = ::popen(command.c_str(), "r");
+#endif
     if (!pipe) {
         return output;
     }
     while (std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
         output += buffer.data();
     }
+#if defined(_WIN32)
+    ::_pclose(pipe);
+#else
     ::pclose(pipe);
+#endif
     return output;
 }
 
@@ -532,7 +558,7 @@ int run_tui() {
             return vbox({
                 text(scan_running ? "Scanning" : "Scan complete") | bold,
                 text(selected_device ? selected_device->path : ""),
-                gauge(progress),
+                gauge(static_cast<float>(progress)),
                 text(fmt::format("scanned={} valid_records={} names={}",
                                  scan_stats.bytes_scanned,
                                  scan_stats.valid_records,
@@ -652,8 +678,8 @@ int run_tui() {
         }
 
         if (page == Page::Devices) {
-            if (!devices.empty() && device_index < static_cast<int>(devices.size())) {
-                selected_device = devices[device_index];
+            if (!devices.empty() && device_index >= 0 && static_cast<std::size_t>(device_index) < devices.size()) {
+                selected_device = devices[static_cast<std::size_t>(device_index)];
                 page = Page::Warning;
             }
             return true;
@@ -673,8 +699,8 @@ int run_tui() {
             return true;
         }
         if (page == Page::Results) {
-            if (!results.empty() && result_index < static_cast<int>(results.size())) {
-                selected_record = results[result_index];
+            if (!results.empty() && result_index >= 0 && static_cast<std::size_t>(result_index) < results.size()) {
+                selected_record = results[static_cast<std::size_t>(result_index)];
                 actions.clear();
                 actions.push_back("show parent chain");
                 actions.push_back(selected_record->is_directory ? "preview tree" : "open containing folder tree");

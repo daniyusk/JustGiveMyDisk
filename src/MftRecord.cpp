@@ -57,6 +57,15 @@ std::int64_t sign_extend(std::uint64_t value, std::uint8_t byte_count) {
     return static_cast<std::int64_t>(value | mask);
 }
 
+bool checked_add(std::int64_t lhs, std::int64_t rhs, std::int64_t& result) {
+    if ((rhs > 0 && lhs > std::numeric_limits<std::int64_t>::max() - rhs) ||
+        (rhs < 0 && lhs < std::numeric_limits<std::int64_t>::min() - rhs)) {
+        return false;
+    }
+    result = lhs + rhs;
+    return true;
+}
+
 std::optional<std::vector<DataRun>> parse_data_runs(const std::vector<std::uint8_t>& bytes,
                                                     std::size_t offset,
                                                     std::size_t end) {
@@ -92,10 +101,12 @@ std::optional<std::vector<DataRun>> parse_data_runs(const std::vector<std::uint8
         run.cluster_count = cluster_count;
         run.sparse = offset_size == 0;
         if (!run.sparse) {
-            current_lcn += sign_extend(raw_delta, offset_size);
-            if (current_lcn < 0) {
+            std::int64_t next_lcn = 0;
+            if (!checked_add(current_lcn, sign_extend(raw_delta, offset_size), next_lcn) ||
+                next_lcn < 0) {
                 return std::nullopt;
             }
+            current_lcn = next_lcn;
             run.lcn = static_cast<std::uint64_t>(current_lcn);
         }
         runs.push_back(run);

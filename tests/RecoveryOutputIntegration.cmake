@@ -1,4 +1,4 @@
-﻿if (NOT PROGRAM OR NOT TEST_ROOT)
+if (NOT PROGRAM OR NOT TEST_ROOT)
     message(FATAL_ERROR "PROGRAM and TEST_ROOT are required")
 endif()
 

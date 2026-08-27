@@ -94,6 +94,7 @@ int main(int argc, char** argv) {
     recover_cmd->add_option("--dest", recover_options.destination, "Destination directory")
         ->required();
     recover_cmd->add_flag("--dry-run", recover_options.dry_run, "Print what would be recovered without writing files");
+    recover_cmd->add_flag("--overwrite", recover_options.overwrite, "Replace existing regular files atomically");
 
     auto* tui_cmd = app.add_subcommand("tui", "Open the interactive terminal recovery UI");
 

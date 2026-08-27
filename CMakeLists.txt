@@ -58,6 +58,8 @@ endfunction()
 add_library(jgmd_core
     src/Scanner.cpp
     src/Recover.cpp
+    src/PathSafety.cpp
+    src/RecoveryOutput.cpp
     src/MftRecord.cpp
     src/Database.cpp
     src/Utf.cpp)
@@ -101,8 +103,6 @@ if (JUSTGIVEMYDISK_BUILD_APP)
 endif()
 
 if (BUILD_TESTING)
-    add_subdirectory(tests)
-
     add_executable(MftRecordParserTests
         tests/MftRecordParserTests.cpp
         tests/NtfsFixtures.cpp
@@ -116,6 +116,38 @@ if (BUILD_TESTING)
     justgivemydisk_enable_sanitizers(MftRecordParserTests)
 
     add_test(NAME MftRecordParserTests COMMAND MftRecordParserTests)
+
+    if (JUSTGIVEMYDISK_BUILD_APP)
+        add_subdirectory(tests)
+
+        add_executable(path_safety_tests
+            tests/PathSafetyTests.cpp
+            src/PathSafety.cpp)
+        target_include_directories(path_safety_tests PRIVATE src)
+        target_link_libraries(path_safety_tests PRIVATE fmt::fmt)
+        add_test(NAME path_safety_unit COMMAND path_safety_tests)
+
+        add_executable(recovery_output_tests
+            tests/RecoveryOutputTests.cpp
+            src/RecoveryOutput.cpp)
+        target_include_directories(recovery_output_tests PRIVATE src)
+        target_link_libraries(recovery_output_tests PRIVATE fmt::fmt)
+        add_test(NAME recovery_output_unit COMMAND recovery_output_tests)
+
+        add_test(
+            NAME path_safety_cli_integration
+            COMMAND ${CMAKE_COMMAND}
+                -DPROGRAM=$<TARGET_FILE:JustGiveMyDisk>
+                -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/path-safety-integration
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/PathSafetyIntegration.cmake)
+
+        add_test(
+            NAME recovery_output_cli_integration
+            COMMAND ${CMAKE_COMMAND}
+                -DPROGRAM=$<TARGET_FILE:JustGiveMyDisk>
+                -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/recovery-output-integration
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/RecoveryOutputIntegration.cmake)
+    endif()
 endif()
 
 if (JUSTGIVEMYDISK_BUILD_FUZZER)

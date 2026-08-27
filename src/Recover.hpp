@@ -10,6 +10,7 @@ struct RecoverOptions {
     std::uint64_t root_record_id = 0;
     std::string destination;
     bool dry_run = false;
+    bool overwrite = false;
 };
 
 struct RecoverStats {

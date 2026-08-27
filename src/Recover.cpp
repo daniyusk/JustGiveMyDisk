@@ -2,13 +2,13 @@
 
 #include "Database.hpp"
 #include "MftRecord.hpp"
+#include "PathSafety.hpp"
 
 #include <fmt/core.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -20,32 +20,6 @@
 #include <vector>
 
 namespace {
-
-class SourceDevice {
-public:
-    explicit SourceDevice(const std::string& path) {
-        fd_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (fd_ < 0) {
-            throw std::runtime_error(fmt::format("failed to open source read-only {}: {}", path, std::strerror(errno)));
-        }
-    }
-
-    ~SourceDevice() {
-        if (fd_ >= 0) {
-            ::close(fd_);
-        }
-    }
-
-    SourceDevice(const SourceDevice&) = delete;
-    SourceDevice& operator=(const SourceDevice&) = delete;
-
-    int get() const {
-        return fd_;
-    }
-
-private:
-    int fd_ = -1;
-};
 
 struct RecoverItem {
     StoredRecord record;
@@ -304,9 +278,11 @@ RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log)
         }
     };
 
+    path_safety::Source source(options.source);
+    path_safety::validate_database_path(source, options.database_path);
+    path_safety::validate_destination_path(source, options.destination);
     Database db(options.database_path);
-    SourceDevice source(options.source);
-    const std::uint64_t cluster_size = read_cluster_size(source.get());
+    const std::uint64_t cluster_size = read_cluster_size(source.fd());
 
     const auto root = db.get_by_record_id(options.root_record_id);
     if (!root) {
@@ -340,7 +316,7 @@ RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log)
     }
 
     emit(fmt::format("Locating {} file MFT record(s) by FILE header record number", wanted_files.size()));
-    const auto records = locate_records(source.get(), wanted_files);
+    const auto records = locate_records(source.fd(), wanted_files);
 
     for (const auto& item : items) {
         const auto target = std::filesystem::path(options.destination) / item.relative_path;
@@ -352,7 +328,7 @@ RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log)
 
             const auto found = records.find(item.record.record_id_guess);
             if (found == records.end() ||
-                !recover_file(source.get(), item.record, found->second, cluster_size, target)) {
+                !recover_file(source.fd(), item.record, found->second, cluster_size, target)) {
                 ++stats.skipped;
                 emit(fmt::format("skipped {}", target.string()));
                 continue;

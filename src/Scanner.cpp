@@ -1,10 +1,11 @@
 #include "Scanner.hpp"
 
+#include "PathSafety.hpp"
+
 #include <fmt/core.h>
 
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -12,32 +13,6 @@
 #include <vector>
 
 namespace {
-
-class FileDescriptor {
-public:
-    explicit FileDescriptor(const std::string& path) {
-        fd_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (fd_ < 0) {
-            throw std::runtime_error(fmt::format("failed to open source read-only {}: {}", path, std::strerror(errno)));
-        }
-    }
-
-    ~FileDescriptor() {
-        if (fd_ >= 0) {
-            ::close(fd_);
-        }
-    }
-
-    FileDescriptor(const FileDescriptor&) = delete;
-    FileDescriptor& operator=(const FileDescriptor&) = delete;
-
-    int get() const {
-        return fd_;
-    }
-
-private:
-    int fd_ = -1;
-};
 
 std::optional<std::uint64_t> source_size(int fd) {
     struct stat st {};
@@ -73,12 +48,13 @@ ScanStats Scanner::run(const ScanOptions& options) {
 }
 
 ScanStats Scanner::run(const ScanOptions& options, const ProgressCallback& progress) {
-    FileDescriptor source(options.source);
+    path_safety::Source source(options.source);
+    path_safety::validate_database_path(source, options.database_path);
     Database database(options.database_path);
     database.initialize();
 
     ScanStats stats;
-    const auto total_size = source_size(source.get());
+    const auto total_size = source_size(source.fd());
     if (total_size) {
         const auto message = fmt::format("Scanning {} bytes from {} in read-only mode", *total_size, options.source);
         if (progress) {
@@ -105,7 +81,7 @@ ScanStats Scanner::run(const ScanOptions& options, const ProgressCallback& progr
     while (true) {
         std::size_t filled = 0;
         while (filled < buffer.size()) {
-            const ssize_t n = ::read(source.get(), buffer.data() + filled, buffer.size() - filled);
+            const ssize_t n = ::read(source.fd(), buffer.data() + filled, buffer.size() - filled);
             if (n < 0) {
                 if (errno == EINTR) {
                     continue;

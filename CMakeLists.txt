@@ -5,6 +5,8 @@ project(JustGiveMyDisk
     DESCRIPTION "Read-only NTFS MFT scanner for targeted directory recovery"
     LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -26,6 +28,7 @@ add_executable(JustGiveMyDisk
     src/main.cpp
     src/Scanner.cpp
     src/Recover.cpp
+    src/PathSafety.cpp
     src/Tui.cpp
     src/MftRecord.cpp
     src/Database.cpp
@@ -44,4 +47,20 @@ target_link_libraries(JustGiveMyDisk
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(JustGiveMyDisk PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (BUILD_TESTING)
+    add_executable(path_safety_tests
+        tests/PathSafetyTests.cpp
+        src/PathSafety.cpp)
+    target_include_directories(path_safety_tests PRIVATE src)
+    target_link_libraries(path_safety_tests PRIVATE fmt::fmt)
+    add_test(NAME path_safety_unit COMMAND path_safety_tests)
+
+    add_test(
+        NAME path_safety_cli_integration
+        COMMAND ${CMAKE_COMMAND}
+            -DPROGRAM=$<TARGET_FILE:JustGiveMyDisk>
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/path-safety-integration
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/PathSafetyIntegration.cmake)
 endif()

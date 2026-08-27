@@ -49,8 +49,8 @@ ScanStats Scanner::run(const ScanOptions& options) {
 
 ScanStats Scanner::run(const ScanOptions& options, const ProgressCallback& progress) {
     path_safety::Source source(options.source);
-    path_safety::validate_database_path(source, options.database_path);
-    Database database(options.database_path);
+    const auto database_path = path_safety::validate_database_path(source, options.database_path);
+    Database database(database_path.string());
     database.initialize();
 
     ScanStats stats;

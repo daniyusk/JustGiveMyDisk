@@ -284,7 +284,8 @@ std::uint64_t Source::block_device() const noexcept {
     return block_device_;
 }
 
-void validate_database_path(const Source& source, const std::filesystem::path& database_path) {
+std::filesystem::path validate_database_path(
+    const Source& source, const std::filesystem::path& database_path) {
     const auto canonical = canonicalize(database_path, "database");
     reject_source_alias(source, database_path, canonical, "database");
     const auto storage = existing_ancestor(canonical, "database");
@@ -296,9 +297,11 @@ void validate_database_path(const Source& source, const std::filesystem::path& d
             "existing ancestor '{}' is not a directory", storage.path.string()));
     }
     reject_source_storage(source, database_path, "database", storage);
+    return canonical;
 }
 
-void validate_destination_path(const Source& source, const std::filesystem::path& destination_path) {
+std::filesystem::path validate_destination_path(
+    const Source& source, const std::filesystem::path& destination_path) {
     const auto canonical = canonicalize(destination_path, "destination");
     reject_source_alias(source, destination_path, canonical, "destination");
     const auto storage = existing_ancestor(canonical, "destination");
@@ -316,6 +319,7 @@ void validate_destination_path(const Source& source, const std::filesystem::path
             "existing ancestor '{}' is not a directory", storage.path.string()));
     }
     reject_source_storage(source, destination_path, "destination", storage);
+    return canonical;
 }
 
 } // namespace path_safety

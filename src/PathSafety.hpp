@@ -31,7 +31,9 @@ private:
 
 // These checks are deliberately performed before SQLite or recovery output is
 // opened. Both the CLI and TUI reach them through Scanner and Recover.
-void validate_database_path(const Source& source, const std::filesystem::path& database_path);
-void validate_destination_path(const Source& source, const std::filesystem::path& destination_path);
+std::filesystem::path validate_database_path(
+    const Source& source, const std::filesystem::path& database_path);
+std::filesystem::path validate_destination_path(
+    const Source& source, const std::filesystem::path& destination_path);
 
 } // namespace path_safety

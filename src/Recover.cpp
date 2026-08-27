@@ -3,6 +3,7 @@
 #include "Database.hpp"
 #include "MftRecord.hpp"
 #include "PathSafety.hpp"
+#include "RecoveryOutput.hpp"
 
 #include <fmt/core.h>
 
@@ -10,9 +11,9 @@
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -51,19 +52,6 @@ std::uint64_t read_cluster_size(int fd) {
         throw std::runtime_error("invalid NTFS boot sector cluster geometry");
     }
     return checked_mul(bytes_per_sector, sectors_per_cluster, "cluster size");
-}
-
-std::string safe_name(std::string name) {
-    for (char& ch : name) {
-        const auto c = static_cast<unsigned char>(ch);
-        if (ch == '/' || ch == '\\' || c < 0x20) {
-            ch = '_';
-        }
-    }
-    if (name.empty() || name == "." || name == "..") {
-        return "_";
-    }
-    return name;
 }
 
 bool better_name(const StoredRecord& candidate, const StoredRecord& current) {
@@ -117,16 +105,18 @@ void collect_tree(Database& db,
                   std::uint64_t parent_record_id,
                   const std::filesystem::path& base,
                   std::vector<RecoverItem>& items,
-                  std::unordered_set<std::uint64_t>& visited_dirs) {
+                  std::unordered_set<std::uint64_t>& visited_dirs,
+                  recovery_output::CollisionTracker& collisions) {
     if (!visited_dirs.insert(parent_record_id).second) {
         return;
     }
 
     for (const auto& child : dedup_children(db.children_of(parent_record_id))) {
-        const auto relative = base / safe_name(child.name);
+        const auto relative = base / recovery_output::sanitize_name(child.name);
+        collisions.add(relative, child.name, child.record_id_guess);
         items.push_back({child, relative});
         if (child.is_directory) {
-            collect_tree(db, child.record_id_guess, relative, items, visited_dirs);
+            collect_tree(db, child.record_id_guess, relative, items, visited_dirs, collisions);
         }
     }
 }
@@ -176,14 +166,11 @@ std::unordered_map<std::uint64_t, std::vector<std::uint8_t>> locate_records(
     return found;
 }
 
-bool write_zeros(std::ofstream& out, std::uint64_t size) {
+bool write_zeros(recovery_output::AtomicFile& out, std::uint64_t size) {
     std::vector<char> zeros(1024 * 1024, 0);
     while (size > 0) {
         const auto chunk = static_cast<std::size_t>(std::min<std::uint64_t>(size, zeros.size()));
-        out.write(zeros.data(), static_cast<std::streamsize>(chunk));
-        if (!out) {
-            return false;
-        }
+        out.write(zeros.data(), chunk);
         size -= chunk;
     }
     return true;
@@ -193,7 +180,7 @@ bool copy_nonresident(int fd,
                       const DataAttribute& data,
                       std::uint64_t cluster_size,
                       std::uint64_t bytes_to_copy,
-                      std::ofstream& out) {
+                      recovery_output::AtomicFile& out) {
     std::vector<char> buffer(1024 * 1024);
     std::uint64_t remaining = bytes_to_copy;
 
@@ -218,10 +205,7 @@ bool copy_nonresident(int fd,
             if (!read_exact_at(fd, buffer.data(), chunk, source_offset)) {
                 return false;
             }
-            out.write(buffer.data(), static_cast<std::streamsize>(chunk));
-            if (!out) {
-                return false;
-            }
+            out.write(buffer.data(), chunk);
             source_offset += chunk;
             to_copy -= chunk;
             remaining -= chunk;
@@ -235,7 +219,8 @@ bool recover_file(int fd,
                   const StoredRecord& record,
                   const std::vector<std::uint8_t>& mft_bytes,
                   std::uint64_t cluster_size,
-                  const std::filesystem::path& path) {
+                  const std::filesystem::path& path,
+                  bool overwrite) {
     MftRecordParser parser;
     const auto attributes = parser.data_attributes(mft_bytes);
     if (attributes.empty()) {
@@ -248,19 +233,54 @@ bool recover_file(int fd,
         return false;
     }
 
-    std::filesystem::create_directories(path.parent_path());
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        return false;
-    }
+    recovery_output::AtomicFile out(path, overwrite);
 
     if (data.resident) {
         const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(bytes_to_copy, data.resident_data.size()));
-        out.write(reinterpret_cast<const char*>(data.resident_data.data()), static_cast<std::streamsize>(count));
-        return static_cast<bool>(out) && count == bytes_to_copy;
+        out.write(data.resident_data.data(), count);
+        if (count != bytes_to_copy) {
+            return false;
+        }
+        out.commit();
+        return true;
     }
 
-    return copy_nonresident(fd, data, cluster_size, bytes_to_copy, out);
+    if (!copy_nonresident(fd, data, cluster_size, bytes_to_copy, out)) {
+        return false;
+    }
+    out.commit();
+    return true;
+}
+
+void ensure_safe_directory(const path_safety::Source& source, const std::filesystem::path& directory) {
+    std::filesystem::path current = directory.root_path();
+    for (const auto& component : directory.relative_path()) {
+        current /= component;
+        struct stat info {};
+        if (::lstat(current.c_str(), &info) != 0) {
+            if (errno != ENOENT) {
+                throw std::runtime_error(fmt::format(
+                    "cannot inspect output directory '{}': {}", current.string(), std::strerror(errno)));
+            }
+            if (::mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) {
+                throw std::runtime_error(fmt::format(
+                    "cannot create output directory '{}': {}", current.string(), std::strerror(errno)));
+            }
+            if (::lstat(current.c_str(), &info) != 0) {
+                throw std::runtime_error(fmt::format(
+                    "cannot inspect created output directory '{}': {}", current.string(), std::strerror(errno)));
+            }
+        }
+        if (S_ISLNK(info.st_mode)) {
+            throw std::runtime_error(fmt::format(
+                "refusing symlink in output directory path '{}'", current.string()));
+        }
+        if (!S_ISDIR(info.st_mode)) {
+            throw std::runtime_error(fmt::format(
+                "output directory component '{}' is not a directory", current.string()));
+        }
+        path_safety::validate_destination_path(source, current);
+    }
 }
 
 } // namespace
@@ -279,9 +299,9 @@ RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log)
     };
 
     path_safety::Source source(options.source);
-    path_safety::validate_database_path(source, options.database_path);
-    path_safety::validate_destination_path(source, options.destination);
-    Database db(options.database_path);
+    const auto database_path = path_safety::validate_database_path(source, options.database_path);
+    const auto destination = path_safety::validate_destination_path(source, options.destination);
+    Database db(database_path.string());
     const std::uint64_t cluster_size = read_cluster_size(source.fd());
 
     const auto root = db.get_by_record_id(options.root_record_id);
@@ -291,22 +311,23 @@ RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log)
 
     std::vector<RecoverItem> items;
     std::unordered_set<std::uint64_t> visited_dirs;
-    collect_tree(db, options.root_record_id, {}, items, visited_dirs);
+    recovery_output::CollisionTracker collisions;
+    collect_tree(db, options.root_record_id, {}, items, visited_dirs, collisions);
 
     RecoverStats stats;
     stats.preview_items = items.size();
     if (options.dry_run) {
-        emit(fmt::format("dry-run: root record {} -> {}", options.root_record_id, options.destination));
+        emit(fmt::format("dry-run: root record {} -> {}", options.root_record_id, destination.string()));
         for (const auto& item : items) {
             emit(fmt::format("{} {}",
                              item.record.is_directory ? "dir " : "file",
-                             (std::filesystem::path(options.destination) / item.relative_path).string()));
+                             (destination / item.relative_path).string()));
         }
         emit(fmt::format("dry-run: {} item(s)", items.size()));
         return stats;
     }
 
-    std::filesystem::create_directories(options.destination);
+    ensure_safe_directory(source, destination);
 
     std::unordered_set<std::uint64_t> wanted_files;
     for (const auto& item : items) {
@@ -319,16 +340,19 @@ RecoverStats Recover::run(const RecoverOptions& options, const LogCallback& log)
     const auto records = locate_records(source.fd(), wanted_files);
 
     for (const auto& item : items) {
-        const auto target = std::filesystem::path(options.destination) / item.relative_path;
+        const auto target = destination / item.relative_path;
         try {
             if (item.record.is_directory) {
-                std::filesystem::create_directories(target);
+                ensure_safe_directory(source, target);
                 continue;
             }
 
+            ensure_safe_directory(source, target.parent_path());
+            path_safety::validate_destination_path(source, target.parent_path());
+
             const auto found = records.find(item.record.record_id_guess);
             if (found == records.end() ||
-                !recover_file(source.fd(), item.record, found->second, cluster_size, target)) {
+                !recover_file(source.fd(), item.record, found->second, cluster_size, target, options.overwrite)) {
                 ++stats.skipped;
                 emit(fmt::format("skipped {}", target.string()));
                 continue;

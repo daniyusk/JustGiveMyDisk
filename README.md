@@ -23,6 +23,8 @@ JustGiveMyDisk is an experimental, terminal-only C++20 recovery helper for corru
 - Supports resident and non-resident unnamed `$DATA` attributes (`0x80`).
 - Parses NTFS data runs and copies only each file's real size.
 - Provides a `--dry-run` recovery preview.
+- Validates database and recovery paths against the open source device before writing.
+- Publishes recovered files atomically from `.partial` files without overwriting by default.
 
 ## Dependencies
 
@@ -94,6 +96,8 @@ Recover the indexed tree into a separate destination:
 ```sh
 sudo ./build/JustGiveMyDisk recover /dev/nvme0n1p3 scan.db --id 1189298 --dest /media/bkcpdisco/RECUP_IN_ROMANCE
 ```
+
+Existing files are skipped by default. Pass `--overwrite` only when replacing existing regular files is intentional. Incomplete writes are removed; a stale `.partial` left by an interrupted process is reported and can be replaced with the same explicit flag.
 
 The `recover` command uses `scan.db` to recursively collect children whose `parent_ref` matches the current directory `record_id_guess`. It then scans the source for MFT `FILE` records and matches the record number stored in the MFT header before reading `$DATA`; it does not assume that `record_id_guess * 1024` is the source offset.
 

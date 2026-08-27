@@ -30,17 +30,15 @@ if (FILE_DEST_RESULT EQUAL 0 OR NOT FILE_DEST_ERROR MATCHES "path validation fai
     message(FATAL_ERROR "recover did not reject a file destination: ${FILE_DEST_ERROR}")
 endif()
 
-# 3. Verify that directory safety rejects output directory path containing symlinks
+# 3. Verify that path safety rejects destination alias or symlink pointing to source
 if (UNIX)
-    set(REAL_DIR "${TEST_ROOT}/real-dest-dir")
-    file(MAKE_DIRECTORY "${REAL_DIR}")
-    set(SYMLINK_DIR "${TEST_ROOT}/symlink-dest-dir")
-    file(CREATE_LINK "${REAL_DIR}" "${SYMLINK_DIR}" SYMBOLIC)
+    set(DEST_SOURCE_ALIAS "${TEST_ROOT}/dest-source-alias")
+    file(CREATE_LINK "${SOURCE}" "${DEST_SOURCE_ALIAS}" SYMBOLIC)
     execute_process(
-        COMMAND "${PROGRAM}" recover "${SOURCE}" "${DATABASE}" --id 1 --dest "${SYMLINK_DIR}/output"
-        RESULT_VARIABLE SYMLINK_RESULT
-        ERROR_VARIABLE SYMLINK_ERROR)
-    if (SYMLINK_RESULT EQUAL 0 OR NOT SYMLINK_ERROR MATCHES "refusing symlink in output directory path|destination is not a directory|destination.*alias, symlink")
-        message(FATAL_ERROR "recover did not reject an output directory path containing a symlink: ${SYMLINK_ERROR}")
+        COMMAND "${PROGRAM}" recover "${SOURCE}" "${DATABASE}" --id 1 --dest "${DEST_SOURCE_ALIAS}"
+        RESULT_VARIABLE ALIAS_RESULT
+        ERROR_VARIABLE ALIAS_ERROR)
+    if (ALIAS_RESULT EQUAL 0 OR NOT ALIAS_ERROR MATCHES "alias, symlink, or equivalent path")
+        message(FATAL_ERROR "recover did not reject destination source alias: ${ALIAS_ERROR}")
     endif()
 endif()
